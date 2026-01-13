@@ -29,8 +29,22 @@ authorized_users:
 
 # Face Detection Configuration
 detection:
+  # Detector type: haar_cascade, int8_haar_cascade, blazeface, or dnn
+  # - haar_cascade: Fast, classical detector (good for CPU, less accurate)
+  # - int8_haar_cascade: INT8 optimized Haar (faster, uses uint8 images)
+  # - blazeface: Modern lightweight detector (requires ONNX model)
+  # - dnn: OpenCV DNN face detector (balance of speed and accuracy)
+  detector_type: int8_haar_cascade
+
+  # Model path for BlazeFace (only used if detector_type=blazeface)
+  # Leave empty to auto-search in models/ directory
+  blazeface_model_path: ""
+
   # Confidence threshold for face detection
   confidence_threshold: 0.7
+
+  # NMS (Non-Maximum Suppression) threshold for BlazeFace
+  nms_threshold: 0.3
 
   # Minimum face size (pixels) - width OR height
   min_face_size: 80
@@ -51,7 +65,7 @@ temporal:
   # If face disappears for less than this, keep showing it
   # Set to 0 for no persistence (immediate removal)
   # Recommended: 5-10 for smooth tracking despite brief occlusions
-  max_frames_missing: 5
+  max_frames_missing: 2
 
   # IoU (Intersection over Union) threshold for matching faces across frames
   # Higher = stricter matching (same face must overlap more)

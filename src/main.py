@@ -17,7 +17,7 @@ from loguru import logger
 
 from src.camera import CameraBase, USBCamera
 from src.camera.camera_base import CameraSpecs
-from src.pipeline import BlazeFaceDetector, MobileFaceNetRecognizer, FacePipeline
+from src.pipeline import create_face_detector, MobileFaceNetRecognizer, FacePipeline
 from src.pipeline.face_authenticator import FaceAuthenticator
 from src.viewer import LiveViewer
 
@@ -48,7 +48,7 @@ class SmartCarNode:
 
         # Components
         self.camera: Optional[CameraBase] = None
-        self.detector: Optional[BlazeFaceDetector] = None
+        self.detector = None  # Will be created by factory
         self.recognizer: Optional[MobileFaceNetRecognizer] = None
         self.pipeline: Optional[FacePipeline] = None
         self.viewer: Optional[LiveViewer] = None
@@ -207,14 +207,29 @@ class SmartCarNode:
             return False
 
     def _init_detector(self) -> bool:
-        """Initialize face detector."""
+        """Initialize face detector from config."""
         try:
-            self.detector = BlazeFaceDetector(
-                confidence_threshold=0.7,
-                use_opencv_dnn=True  # Using OpenCV fallback for now
+            det_config = self.recognition_config.get('detection', {})
+
+            # Get detector configuration
+            detector_type = det_config.get('detector_type', 'haar_cascade')
+            confidence_threshold = det_config.get('confidence_threshold', 0.7)
+            nms_threshold = det_config.get('nms_threshold', 0.3)
+            model_path = det_config.get('blazeface_model_path', None)
+
+            # Handle empty string as None for model_path
+            if model_path == "":
+                model_path = None
+
+            # Create detector using factory
+            self.detector = create_face_detector(
+                detector_type=detector_type,
+                confidence_threshold=confidence_threshold,
+                nms_threshold=nms_threshold,
+                model_path=model_path
             )
 
-            logger.success("Detector initialized")
+            logger.success(f"Detector initialized: {detector_type}")
             return True
 
         except Exception as e:
