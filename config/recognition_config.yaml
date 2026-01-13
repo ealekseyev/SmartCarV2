@@ -24,7 +24,7 @@ recognition:
 # Format: {username}.npz
 authorized_users:
   - evan_nicholas
-  - evan_beard
+  #- evan_beard
 
 # Face Detection Configuration
 detection:
@@ -58,3 +58,14 @@ temporal:
   # Range: 0.0 to 1.0
   # Recommended: 0.3 for normal tracking
   iou_threshold: 0.2
+
+# Authentication Engine
+# High-stakes decision making for actions like car auto-start
+authentication:
+  enabled: true
+  authorized_user: evan_nicholas
+  min_frames_required: 5
+  weighted_confidence_threshold: 0.75
+  min_single_frame_confidence: 0.60
+  max_bbox_movement_pixels: 100.0
+  history_size: 10
