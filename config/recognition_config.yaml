@@ -7,7 +7,7 @@ recognition:
   # Range: 0.0 to 1.0
   # Recommended: 0.30-0.40 for InsightFace models
   # If getting false positives at 0.4, use 0.45 or higher
-  similarity_threshold: 0.45
+  similarity_threshold: 0.6
 
   # Embedding size (must match model)
   embedding_size: 512
@@ -24,17 +24,37 @@ recognition:
 # Format: {username}.npz
 authorized_users:
   - evan_nicholas
-  - nicholas_nicholas
-  # - john_doe
-  # - jane_smith
+  - evan_beard
 
 # Face Detection Configuration
 detection:
   # Confidence threshold for face detection
   confidence_threshold: 0.7
 
-  # Minimum face size (pixels)
-  min_face_size: 40
+  # Minimum face size (pixels) - width OR height
+  min_face_size: 80
 
   # Face crop padding (fraction of bbox)
   crop_padding: 0.2
+
+# Temporal Filtering
+# Prevents flickering/false detections by requiring persistence
+temporal:
+  # Minimum consecutive frames a face must be detected before showing
+  # Higher = more stable, less flickering, but slower response
+  # Set to 1 for immediate display (no temporal filtering)
+  # Recommended: 3-5 for reducing jitter and false detections
+  min_frames_to_show: 3
+
+  # Maximum frames to keep face "alive" if lost
+  # If face disappears for less than this, keep showing it
+  # Set to 0 for no persistence (immediate removal)
+  # Recommended: 5-10 for smooth tracking despite brief occlusions
+  max_frames_missing: 5
+
+  # IoU (Intersection over Union) threshold for matching faces across frames
+  # Higher = stricter matching (same face must overlap more)
+  # Lower = looser matching (can track faces that move more between frames)
+  # Range: 0.0 to 1.0
+  # Recommended: 0.3 for normal tracking
+  iou_threshold: 0.2

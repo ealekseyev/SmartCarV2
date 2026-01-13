@@ -11,6 +11,7 @@ from loguru import logger
 
 from .face_detector import BlazeFaceDetector, FaceDetection
 from .face_recognizer import MobileFaceNetRecognizer
+from .face_tracker import FaceTracker
 
 
 @dataclass
@@ -37,8 +38,12 @@ class FacePipeline:
         self,
         detector: BlazeFaceDetector,
         recognizer: MobileFaceNetRecognizer,
-        min_face_size: int = 40,
-        crop_padding: float = 0.2
+        min_face_size: int = 80,
+        crop_padding: float = 0.2,
+        enable_tracking: bool = True,
+        min_frames_to_show: int = 3,
+        max_frames_missing: int = 5,
+        iou_threshold: float = 0.3
     ):
         """
         Initialize face pipeline.
@@ -46,25 +51,44 @@ class FacePipeline:
         Args:
             detector: Face detector instance
             recognizer: Face recognizer instance
-            min_face_size: Minimum face size to process (width or height)
+            min_face_size: Minimum face size to process (width or height in pixels)
             crop_padding: Padding around face crop (fraction of bbox)
+            enable_tracking: Enable temporal tracking to reduce jitter
+            min_frames_to_show: Consecutive frames required before showing face
+            max_frames_missing: Frames to keep face alive when temporarily lost
+            iou_threshold: IoU threshold for matching faces across frames
         """
         self.detector = detector
         self.recognizer = recognizer
         self.min_face_size = min_face_size
         self.crop_padding = crop_padding
+        self.enable_tracking = enable_tracking
 
-        logger.info("Face pipeline initialized")
+        # Initialize face tracker if enabled
+        if enable_tracking:
+            self.tracker = FaceTracker(
+                min_frames_to_show=min_frames_to_show,
+                max_frames_missing=max_frames_missing,
+                iou_threshold=iou_threshold
+            )
+        else:
+            self.tracker = None
+
+        logger.info(
+            f"Face pipeline initialized: "
+            f"tracking={'ON' if enable_tracking else 'OFF'}, "
+            f"min_size={min_face_size}px"
+        )
 
     def process_frame(self, frame: np.ndarray) -> List[PipelineResult]:
         """
-        Process a single frame through the full pipeline.
+        Process a single frame through the full pipeline with temporal filtering.
 
         Args:
             frame: Input frame (RGB format)
 
         Returns:
-            List of pipeline results for each detected face
+            List of confirmed pipeline results (filtered by size and temporal stability)
         """
         results = []
 
@@ -74,15 +98,26 @@ class FacePipeline:
 
             if len(detections) == 0:
                 logger.debug("No faces detected in frame")
+                # Update tracker with empty detections
+                if self.enable_tracking and self.tracker is not None:
+                    return self.tracker.update([])
                 return results
 
             logger.debug(f"Processing {len(detections)} detected faces")
 
-            # Step 2 & 3: Process each detected face
+            # Step 2 & 3: Process each detected face (with size filtering)
             for detection in detections:
                 result = self._process_face(frame, detection)
                 if result is not None:
                     results.append(result)
+
+            # Step 4: Apply temporal tracking if enabled
+            if self.enable_tracking and self.tracker is not None:
+                results = self.tracker.update(results)
+                logger.debug(
+                    f"Temporal filtering: {len(detections)} detections → "
+                    f"{len(results)} confirmed (after tracking)"
+                )
 
         except Exception as e:
             logger.error(f"Error processing frame: {e}")

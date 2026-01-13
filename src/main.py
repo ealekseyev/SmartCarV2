@@ -241,11 +241,19 @@ class SmartCarNode:
     def _init_pipeline(self) -> bool:
         """Initialize face pipeline."""
         try:
+            # Get config values
+            det_config = self.recognition_config.get('detection', {})
+            temporal_config = self.recognition_config.get('temporal', {})
+
             self.pipeline = FacePipeline(
                 detector=self.detector,
                 recognizer=self.recognizer,
-                min_face_size=40,
-                crop_padding=0.2
+                min_face_size=det_config.get('min_face_size', 80),
+                crop_padding=det_config.get('crop_padding', 0.2),
+                enable_tracking=True,  # Enable temporal tracking
+                min_frames_to_show=temporal_config.get('min_frames_to_show', 3),
+                max_frames_missing=temporal_config.get('max_frames_missing', 5),
+                iou_threshold=temporal_config.get('iou_threshold', 0.3)
             )
 
             logger.success("Pipeline initialized")

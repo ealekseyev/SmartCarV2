@@ -264,7 +264,7 @@ class MobileFaceNetRecognizer:
 
     def identify(self, face_image: np.ndarray) -> tuple[Optional[str], float]:
         """
-        Identify face from enrolled database.
+        Identify face from enrolled database (checks all poses).
 
         Args:
             face_image: Cropped face image
@@ -281,30 +281,46 @@ class MobileFaceNetRecognizer:
         if embedding is None:
             return None, 0.0
 
-        # Find best match across all users and all their embeddings
+        # Find best match across all users and all their pose embeddings
         best_name = None
         best_similarity = 0.0
+        best_pose = None
 
-        for name, enrolled_embeddings in self.face_database.items():
-            # Handle both single embedding and multiple embeddings
-            if enrolled_embeddings.ndim == 1:
-                # Single embedding
-                embeddings_to_check = [enrolled_embeddings]
+        # Pose priority: check frontal first, then others
+        pose_order = ['frontal', 'left', 'right', 'up', 'down']
+
+        for name, pose_embeddings in self.face_database.items():
+            # pose_embeddings is now a dict: {'frontal': emb, 'left': emb, ...}
+            if isinstance(pose_embeddings, dict):
+                # New multi-pose format
+                for pose in pose_order:
+                    if pose in pose_embeddings:
+                        enrolled_embedding = pose_embeddings[pose]
+                        similarity = self.cosine_similarity(embedding, enrolled_embedding)
+
+                        if similarity > best_similarity:
+                            best_similarity = similarity
+                            best_name = name
+                            best_pose = pose
             else:
-                # Multiple embeddings
-                embeddings_to_check = enrolled_embeddings
+                # Legacy format (single embedding or array)
+                # Handle for backward compatibility
+                if pose_embeddings.ndim == 1:
+                    embeddings_to_check = [pose_embeddings]
+                else:
+                    embeddings_to_check = pose_embeddings
 
-            # Check against all embeddings for this person, take best match
-            for enrolled_embedding in embeddings_to_check:
-                similarity = self.cosine_similarity(embedding, enrolled_embedding)
+                for enrolled_embedding in embeddings_to_check:
+                    similarity = self.cosine_similarity(embedding, enrolled_embedding)
 
-                if similarity > best_similarity:
-                    best_similarity = similarity
-                    best_name = name
+                    if similarity > best_similarity:
+                        best_similarity = similarity
+                        best_name = name
+                        best_pose = "legacy"
 
         # Check if above threshold
         if best_similarity >= self.similarity_threshold:
-            logger.info(f"Identified: {best_name} (similarity={best_similarity:.3f})")
+            logger.info(f"Identified: {best_name} (similarity={best_similarity:.3f}, pose={best_pose})")
             return best_name, best_similarity
         else:
             logger.debug(f"No match found (best similarity={best_similarity:.3f})")
@@ -339,39 +355,29 @@ class MobileFaceNetRecognizer:
             return True
         return False
 
-    def save_user_embedding(self, name: str, embedding: np.ndarray, faces_dir: str = "data/faces", append: bool = False) -> bool:
+    def save_user_embedding(self, name: str, embedding: np.ndarray, pose: str = "frontal", faces_dir: str = "data/faces") -> bool:
         """
-        Save individual user embedding to file.
+        Save individual user embedding to file (one file per pose).
 
         Args:
             name: Username
-            embedding: Face embedding (can be single or multiple embeddings)
+            embedding: Face embedding (single averaged embedding)
+            pose: Pose name (frontal, left, right, up, down)
             faces_dir: Directory to store face files
-            append: If True, append to existing embeddings instead of replacing
 
         Returns:
             bool: True if saved successfully
         """
         try:
-            Path(faces_dir).mkdir(parents=True, exist_ok=True)
-            filepath = Path(faces_dir) / f"{name}.npz"
+            # Create user directory
+            user_dir = Path(faces_dir) / name
+            user_dir.mkdir(parents=True, exist_ok=True)
 
-            # Handle single embedding or multiple
-            if embedding.ndim == 1:
-                # Single embedding, make it 2D
-                embeddings = embedding.reshape(1, -1)
-            else:
-                embeddings = embedding
+            # Save pose-specific file
+            filepath = user_dir / f"{pose}.npz"
 
-            # Append mode: load existing and concatenate
-            if append and filepath.exists():
-                existing_data = np.load(filepath)
-                existing_embeddings = existing_data['embeddings']
-                embeddings = np.vstack([existing_embeddings, embeddings])
-                logger.info(f"Appending to existing embeddings. Total: {len(embeddings)}")
-
-            np.savez(filepath, embeddings=embeddings)
-            logger.success(f"Saved {name}'s face embedding(s) to {filepath} ({len(embeddings)} total)")
+            np.savez(filepath, embedding=embedding)
+            logger.success(f"Saved {name}'s {pose} embedding to {filepath}")
             return True
         except Exception as e:
             logger.error(f"Error saving user embedding: {e}")
@@ -379,39 +385,51 @@ class MobileFaceNetRecognizer:
 
     def load_user_embedding(self, name: str, faces_dir: str = "data/faces") -> bool:
         """
-        Load individual user embedding(s) from file.
+        Load all pose embeddings for a user.
 
         Args:
             name: Username
             faces_dir: Directory where face files are stored
 
         Returns:
-            bool: True if loaded successfully
+            bool: True if at least one embedding loaded successfully
         """
         try:
-            filepath = Path(faces_dir) / f"{name}.npz"
+            user_dir = Path(faces_dir) / name
 
-            if not filepath.exists():
-                logger.warning(f"No embedding file found for {name} at {filepath}")
+            if not user_dir.exists():
+                logger.warning(f"No directory found for {name} at {user_dir}")
                 return False
 
-            data = np.load(filepath)
+            # Load all pose files
+            poses = ['frontal', 'left', 'right', 'up', 'down']
+            embeddings = {}
+            loaded_count = 0
 
-            # Support both old format (single 'embedding') and new format (multiple 'embeddings')
-            if 'embeddings' in data:
-                embeddings = data['embeddings']
-            elif 'embedding' in data:
-                # Old format, convert to new format
-                embeddings = data['embedding'].reshape(1, -1)
-            else:
-                logger.error(f"Invalid embedding file format for {name}")
+            for pose in poses:
+                pose_file = user_dir / f"{pose}.npz"
+
+                if pose_file.exists():
+                    try:
+                        data = np.load(pose_file)
+                        if 'embedding' in data:
+                            embeddings[pose] = data['embedding']
+                            loaded_count += 1
+                            logger.debug(f"Loaded {pose} embedding for {name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to load {pose} for {name}: {e}")
+
+            if loaded_count == 0:
+                logger.error(f"No valid embeddings found for {name}")
                 return False
 
+            # Store as dict of pose embeddings
             self.face_database[name] = embeddings
-            logger.success(f"Loaded {name}'s face embedding(s) from {filepath} ({len(embeddings)} embedding(s))")
+            logger.success(f"Loaded {name}'s embeddings ({loaded_count} poses)")
             return True
+
         except Exception as e:
-            logger.error(f"Error loading user embedding: {e}")
+            logger.error(f"Error loading user embeddings: {e}")
             return False
 
     def load_authorized_users(self, authorized_users: list, faces_dir: str = "data/faces") -> int:
