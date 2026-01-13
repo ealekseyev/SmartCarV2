@@ -1,0 +1,40 @@
+# Face Recognition Configuration
+
+recognition:
+  # Similarity threshold for face matching
+  # Higher = more strict (fewer false positives, more false negatives)
+  # Lower = more lenient (more false positives, fewer false negatives)
+  # Range: 0.0 to 1.0
+  # Recommended: 0.30-0.40 for InsightFace models
+  # If getting false positives at 0.4, use 0.45 or higher
+  similarity_threshold: 0.45
+
+  # Embedding size (must match model)
+  embedding_size: 512
+
+  # Device for inference
+  device: cpu  # Options: cpu, cuda, cuda:0, etc.
+
+  # Directory to store individual face embeddings
+  faces_dir: data/faces
+
+# Authorized Users
+# List of users who are authorized to start the car
+# Each user should have a corresponding embedding file in faces_dir
+# Format: {username}.npz
+authorized_users:
+  - evan_nicholas
+  - nicholas_nicholas
+  # - john_doe
+  # - jane_smith
+
+# Face Detection Configuration
+detection:
+  # Confidence threshold for face detection
+  confidence_threshold: 0.7
+
+  # Minimum face size (pixels)
+  min_face_size: 40
+
+  # Face crop padding (fraction of bbox)
+  crop_padding: 0.2

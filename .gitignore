@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Models and weights
+models/
+*.pth
+*.pt
+*.onnx
+*.trt
+*.engine
+*.plan
+
+# Data
+data/
+*.jpg
+*.jpeg
+*.png
+*.mp4
+*.avi
+
+# Face database
+embeddings/
+face_db/
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Config overrides
+config/local_*.yaml
+.env

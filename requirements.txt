@@ -1,0 +1,26 @@
+# Core dependencies
+numpy>=1.21.0
+opencv-python>=4.5.0
+PyYAML>=6.0
+
+# Deep Learning
+torch>=2.0.0
+torchvision>=0.15.0
+onnx>=1.14.0
+onnxruntime>=1.15.0
+
+# Face Detection
+# Note: BlazeFace can be loaded via ONNX or implemented using existing repos
+
+# Utilities
+Pillow>=9.0.0
+tqdm>=4.65.0
+
+# Logging
+loguru>=0.7.0
+
+# Optional: TensorRT (install separately on Jetson)
+# tensorrt>=8.6.0  # Install via NVIDIA SDK Manager on Jetson
+
+# Development
+pytest>=7.0.0

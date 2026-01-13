@@ -1,0 +1,27 @@
+# Camera Configuration
+
+camera:
+  # Camera type: usb, csi (future support)
+  type: usb
+
+  # Device ID for USB camera (usually 0 for /dev/video0)
+  device_id: 0
+
+  # Resolution specifications
+  # Guaranteed output resolution for the pipeline
+  width: 1280
+  height: 720
+
+  # Frame rate specification
+  fps: 30
+
+  # Color format: RGB or BGR
+  # RGB is standard for most ML models
+  format: RGB
+
+# Future camera options can be added here
+# csi_camera:
+#   sensor_id: 0
+#   capture_width: 1280
+#   capture_height: 720
+#   ...
