@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 from dataclasses import dataclass
 from loguru import logger
 
-from .face_detector import BlazeFaceDetector, FaceDetection
+from .face_detector import FaceDetectorBase, FaceDetection
 from .face_recognizer import MobileFaceNetRecognizer
 from .face_tracker import FaceTracker
 
@@ -28,15 +28,15 @@ class FacePipeline:
     End-to-end face recognition pipeline.
 
     Pipeline flow:
-    1. Detect faces in frame (BlazeFace)
+    1. Detect faces in frame (detector agnostic)
     2. Crop detected faces
-    3. Generate embeddings and identify (MobileFaceNet)
+    3. Generate embeddings and identify
     4. Return results with identity and confidence
     """
 
     def __init__(
         self,
-        detector: BlazeFaceDetector,
+        detector: FaceDetectorBase,
         recognizer: MobileFaceNetRecognizer,
         min_face_size: int = 80,
         crop_padding: float = 0.2,
@@ -49,7 +49,7 @@ class FacePipeline:
         Initialize face pipeline.
 
         Args:
-            detector: Face detector instance
+            detector: Face detector instance (any FaceDetectorBase subclass)
             recognizer: Face recognizer instance
             min_face_size: Minimum face size to process (width or height in pixels)
             crop_padding: Padding around face crop (fraction of bbox)

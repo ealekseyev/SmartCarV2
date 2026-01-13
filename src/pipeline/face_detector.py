@@ -298,31 +298,41 @@ class INT8HaarCascadeDetector(FaceDetectorBase):
 
 class BlazeFaceDetector(FaceDetectorBase):
     """
-    BlazeFace face detector using ONNX runtime.
+    BlazeFace/SCRFD face detector using ONNX runtime.
 
     Modern lightweight detector optimized for mobile/edge devices.
-    Requires ONNX model file.
+    Supports InsightFace SCRFD models (e.g., det_10g, det_2.5g).
     """
 
     def __init__(
         self,
         model_path: Optional[str] = None,
-        confidence_threshold: float = 0.7,
-        nms_threshold: float = 0.3
+        confidence_threshold: float = 0.5,
+        nms_threshold: float = 0.4,
+        input_size: Tuple[int, int] = (640, 640)
     ):
         """
-        Initialize BlazeFace detector.
+        Initialize BlazeFace/SCRFD detector.
 
         Args:
-            model_path: Path to BlazeFace ONNX model
+            model_path: Path to ONNX model
             confidence_threshold: Minimum confidence for detection
             nms_threshold: NMS IoU threshold
+            input_size: Model input size (width, height)
         """
         self.model_path = model_path
         self.confidence_threshold = confidence_threshold
         self.nms_threshold = nms_threshold
+        self.input_size = input_size
         self.model = None
         self._is_loaded = False
+
+        # Anchor/stride configuration for SCRFD models
+        self.feat_stride_fpn = [8, 16, 32]
+        self.num_anchors = 2
+
+        # Center cache for anchor generation
+        self._anchor_centers = {}
 
         if model_path:
             self.load_model(model_path)
@@ -391,61 +401,259 @@ class BlazeFaceDetector(FaceDetectorBase):
             return False
 
     def detect(self, image: np.ndarray) -> List[FaceDetection]:
-        """Detect faces using BlazeFace ONNX model."""
+        """Detect faces using SCRFD/BlazeFace ONNX model."""
         if not self._is_loaded:
             return []
 
         try:
             # Preprocess
-            input_tensor = self._preprocess(image)
+            input_tensor, scale = self._preprocess(image)
 
             # Run inference
             outputs = self.model.run(self.output_names, {self.input_name: input_tensor})
 
             # Postprocess
-            detections = self._postprocess(outputs, image.shape)
+            detections = self._postprocess(outputs, scale)
 
-            logger.debug(f"BlazeFace detected {len(detections)} faces")
+            logger.debug(f"BlazeFace/SCRFD detected {len(detections)} faces")
             return detections
 
         except Exception as e:
             logger.error(f"Error in BlazeFace detection: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
-    def _preprocess(self, image: np.ndarray) -> np.ndarray:
-        """Preprocess image for BlazeFace."""
-        # Resize to 640x640 (typical for detection models)
-        img_resized = cv2.resize(image, (640, 640))
+    def _preprocess(self, image: np.ndarray) -> Tuple[np.ndarray, float]:
+        """
+        Preprocess image for SCRFD model.
+
+        Args:
+            image: Input RGB image
+
+        Returns:
+            Tuple of (preprocessed tensor, scale factor)
+        """
+        # Resize maintaining aspect ratio
+        img_h, img_w = image.shape[:2]
+        target_h, target_w = self.input_size
+
+        # Calculate scale to fit within target size
+        scale = min(target_w / img_w, target_h / img_h)
+        new_w = int(img_w * scale)
+        new_h = int(img_h * scale)
+
+        # Resize image
+        img_resized = cv2.resize(image, (new_w, new_h))
+
+        # Create padded image (pad to target size)
+        img_padded = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+        img_padded[:new_h, :new_w] = img_resized
 
         # Convert RGB to BGR and normalize
-        img_bgr = cv2.cvtColor(img_resized, cv2.COLOR_RGB2BGR)
-        img_normalized = img_bgr.astype(np.float32) / 255.0
+        img_bgr = cv2.cvtColor(img_padded, cv2.COLOR_RGB2BGR)
+        img_normalized = img_bgr.astype(np.float32)
+
+        # Mean and std for InsightFace models
+        mean = np.array([127.5, 127.5, 127.5], dtype=np.float32)
+        std = np.array([128.0, 128.0, 128.0], dtype=np.float32)
+        img_normalized = (img_normalized - mean) / std
 
         # Transpose to (C, H, W) and add batch dimension
         img_transposed = np.transpose(img_normalized, (2, 0, 1))
         img_batch = np.expand_dims(img_transposed, axis=0)
 
-        return img_batch
+        return img_batch, scale
 
     def _postprocess(
         self,
         outputs: List[np.ndarray],
-        original_shape: Tuple[int, int, int]
+        scale: float
     ) -> List[FaceDetection]:
         """
-        Postprocess BlazeFace outputs.
+        Postprocess SCRFD model outputs.
 
-        Note: This is a placeholder. Actual postprocessing depends on
-        the specific BlazeFace model format (anchor decoding, NMS, etc.)
+        SCRFD outputs 9 tensors in groups of 3 (for 3 FPN levels):
+        - Scores: [N, 1] confidence scores
+        - Bboxes: [N, 4] bounding boxes (cx, cy, w, h)
+        - Keypoints: [N, 10] facial landmarks (5 points × 2 coords)
+
+        Args:
+            outputs: Model output tensors
+            scale: Scale factor from preprocessing
+
+        Returns:
+            List of face detections
         """
-        # TODO: Implement proper BlazeFace postprocessing
-        # This requires understanding the specific model output format
-        detections = []
+        scores_list = []
+        bboxes_list = []
+        kps_list = []
 
-        # Placeholder implementation
-        logger.warning("BlazeFace postprocessing not fully implemented")
+        # Parse outputs (3 FPN levels, 3 outputs per level)
+        for idx, stride in enumerate(self.feat_stride_fpn):
+            scores = outputs[idx]          # Shape: [num_anchors, 1]
+            bboxes = outputs[idx + 3]      # Shape: [num_anchors, 4]
+            kps = outputs[idx + 6]         # Shape: [num_anchors, 10]
+
+            # Generate anchor centers for this FPN level
+            height = self.input_size[1] // stride
+            width = self.input_size[0] // stride
+            num_anchors_level = height * width * self.num_anchors
+
+            # Verify shape
+            if scores.shape[0] != num_anchors_level:
+                logger.warning(f"Shape mismatch at stride {stride}: expected {num_anchors_level}, got {scores.shape[0]}")
+
+            # Create anchor centers
+            anchor_centers = self._get_anchor_centers(height, width, stride)
+
+            # Decode bboxes from anchor-based format
+            bboxes_decoded = self._distance2bbox(anchor_centers, bboxes)
+            bboxes_decoded *= stride
+
+            # Decode keypoints
+            kps_decoded = self._distance2kps(anchor_centers, kps)
+            kps_decoded *= stride
+
+            scores_list.append(scores)
+            bboxes_list.append(bboxes_decoded)
+            kps_list.append(kps_decoded)
+
+        # Concatenate all FPN levels
+        scores = np.vstack(scores_list)
+        bboxes = np.vstack(bboxes_list)
+        kps = np.vstack(kps_list)
+
+        # Filter by confidence
+        scores_ravel = scores.ravel()
+        order = scores_ravel.argsort()[::-1]
+
+        bboxes = bboxes[order]
+        kps = kps[order]
+        scores = scores[order]
+
+        # Pre-NMS filtering
+        pre_det = np.hstack((bboxes, scores)).astype(np.float32, copy=False)
+        keep = self._nms(pre_det)
+
+        # Build detections
+        detections = []
+        for i in keep:
+            if scores[i] < self.confidence_threshold:
+                continue
+
+            # Scale back to original image coordinates
+            bbox = bboxes[i] / scale
+            x1, y1, x2, y2 = bbox.astype(int)
+
+            # Extract keypoints
+            kp = kps[i] / scale
+            landmarks = []
+            for j in range(5):
+                landmarks.append((int(kp[j * 2]), int(kp[j * 2 + 1])))
+
+            detection = FaceDetection(
+                bbox=(x1, y1, x2, y2),
+                confidence=float(scores[i]),
+                landmarks=landmarks
+            )
+            detections.append(detection)
 
         return detections
+
+    def _get_anchor_centers(self, height: int, width: int, stride: int) -> np.ndarray:
+        """Generate anchor centers for a feature map."""
+        key = (height, width, stride)
+        if key in self._anchor_centers:
+            return self._anchor_centers[key]
+
+        anchor_centers = np.stack(np.mgrid[:height, :width][::-1], axis=-1)
+        anchor_centers = anchor_centers.reshape(-1, 2).astype(np.float32)
+
+        # Repeat for num_anchors
+        anchor_centers = np.stack([anchor_centers] * self.num_anchors, axis=1)
+        anchor_centers = anchor_centers.reshape(-1, 2)
+
+        self._anchor_centers[key] = anchor_centers
+        return anchor_centers
+
+    def _distance2bbox(self, points: np.ndarray, distance: np.ndarray) -> np.ndarray:
+        """
+        Decode bounding boxes from distance predictions.
+
+        Args:
+            points: Anchor center points [N, 2]
+            distance: Distance predictions [N, 4] (left, top, right, bottom)
+
+        Returns:
+            Bboxes in [x1, y1, x2, y2] format
+        """
+        x1 = points[:, 0] - distance[:, 0]
+        y1 = points[:, 1] - distance[:, 1]
+        x2 = points[:, 0] + distance[:, 2]
+        y2 = points[:, 1] + distance[:, 3]
+
+        return np.stack([x1, y1, x2, y2], axis=-1)
+
+    def _distance2kps(self, points: np.ndarray, distance: np.ndarray) -> np.ndarray:
+        """
+        Decode keypoints from distance predictions.
+
+        Args:
+            points: Anchor center points [N, 2]
+            distance: Keypoint distance predictions [N, 10]
+
+        Returns:
+            Keypoints [N, 10]
+        """
+        preds = []
+        for i in range(5):
+            px = points[:, 0] + distance[:, i * 2]
+            py = points[:, 1] + distance[:, i * 2 + 1]
+            preds.append(px)
+            preds.append(py)
+
+        return np.stack(preds, axis=-1)
+
+    def _nms(self, dets: np.ndarray) -> List[int]:
+        """
+        Non-Maximum Suppression.
+
+        Args:
+            dets: Detections [N, 5] (x1, y1, x2, y2, score)
+
+        Returns:
+            List of indices to keep
+        """
+        x1 = dets[:, 0]
+        y1 = dets[:, 1]
+        x2 = dets[:, 2]
+        y2 = dets[:, 3]
+        scores = dets[:, 4]
+
+        areas = (x2 - x1 + 1) * (y2 - y1 + 1)
+        order = scores.argsort()[::-1]
+
+        keep = []
+        while order.size > 0:
+            i = order[0]
+            keep.append(i)
+
+            xx1 = np.maximum(x1[i], x1[order[1:]])
+            yy1 = np.maximum(y1[i], y1[order[1:]])
+            xx2 = np.minimum(x2[i], x2[order[1:]])
+            yy2 = np.minimum(y2[i], y2[order[1:]])
+
+            w = np.maximum(0.0, xx2 - xx1 + 1)
+            h = np.maximum(0.0, yy2 - yy1 + 1)
+            inter = w * h
+
+            iou = inter / (areas[i] + areas[order[1:]] - inter)
+
+            inds = np.where(iou <= self.nms_threshold)[0]
+            order = order[inds + 1]
+
+        return keep
 
     def is_loaded(self) -> bool:
         """Check if detector is loaded."""
