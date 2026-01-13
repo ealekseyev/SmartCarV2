@@ -403,7 +403,10 @@ class SmartCarNode:
                                     # Check for unlock
                                     if auth_result.authenticated:
                                         self.car_state = "UNLOCKED"
+                                        # Initialize with current detection to avoid immediate re-lock
                                         self.recognized_frames.clear()
+                                        for _ in range(unlock_required_detections):
+                                            self.recognized_frames.append(1)
                                         logger.success(f"🔓 CAR UNLOCKED by {result.identity}")
                                         authenticated = True
                                         break
