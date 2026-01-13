@@ -207,13 +207,23 @@ class LiveViewer:
         if extra_info:
             for key, value in extra_info.items():
                 info_text = f"{key}: {value}"
+
+                # Color code state: green for UNLOCKED, red for LOCKED
+                if key == "State":
+                    if "UNLOCKED" in str(value):
+                        color = (0, 255, 0)  # Green
+                    else:
+                        color = (0, 0, 255)  # Red
+                else:
+                    color = (255, 255, 255)  # White for other info
+
                 cv2.putText(
                     frame,
                     info_text,
                     (10, info_y),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     self.font_scale * 0.8,
-                    (255, 255, 255),
+                    color,
                     self.font_thickness - 1
                 )
                 info_y += line_height

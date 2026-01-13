@@ -24,6 +24,7 @@ recognition:
 # Format: {username}.npz
 authorized_users:
   - evan_nicholas
+  - evan_low_light
   #- evan_beard
 
 # Face Detection Configuration
@@ -63,9 +64,22 @@ temporal:
 # High-stakes decision making for actions like car auto-start
 authentication:
   enabled: true
-  authorized_user: evan_nicholas
+  # List of users who can unlock (any one of these can authenticate)
+  # Leave as string for single user, or use list for multiple
+  authorized_users:
+    - evan_nicholas
+    - evan_low_light
   min_frames_required: 5
   weighted_confidence_threshold: 0.75
   min_single_frame_confidence: 0.60
   max_bbox_movement_pixels: 100.0
   history_size: 10
+
+# State Machine
+# Controls LOCKED/UNLOCKED transitions
+state_machine:
+  enabled: true
+  # Number of frames to check for stay-unlocked criteria
+  unlock_window_frames: 500
+  # Minimum detections in window to stay unlocked
+  unlock_required_detections: 2
