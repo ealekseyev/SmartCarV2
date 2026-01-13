@@ -1,11 +1,19 @@
 # Camera Configuration
 
 camera:
-  # Camera type: usb, csi (future support)
-  type: usb
+  # Camera type: usb, mp4, csi (future support)
+  # - usb: USB webcam
+  # - mp4: Pre-recorded video file
+  type: mp4
 
   # Device ID for USB camera (usually 0 for /dev/video0)
   device_id: 0
+
+  # Video file path (only used if type=mp4)
+  video_path: "data/videos/Movie on 1-13-26 at 1.29 PM.mov"
+
+  # Loop video playback (only used if type=mp4)
+  loop: true
 
   # Resolution specifications
   # Guaranteed output resolution for the pipeline

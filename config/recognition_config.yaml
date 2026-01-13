@@ -34,7 +34,7 @@ detection:
   # - int8_haar_cascade: INT8 optimized Haar (faster, uses uint8 images)
   # - blazeface: Modern lightweight detector (requires ONNX model)
   # - dnn: OpenCV DNN face detector (balance of speed and accuracy)
-  detector_type: blazeface #int8_haar_cascade
+  detector_type: haar_cascade
 
   # Model path for BlazeFace (only used if detector_type=blazeface)
   # Leave empty to auto-search in models/ directory

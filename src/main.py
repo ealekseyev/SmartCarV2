@@ -15,7 +15,7 @@ from collections import deque
 from typing import Optional
 from loguru import logger
 
-from src.camera import CameraBase, USBCamera
+from src.camera import CameraBase, USBCamera, MP4Camera
 from src.camera.camera_base import CameraSpecs
 from src.pipeline import create_face_detector, MobileFaceNetRecognizer, FacePipeline
 from src.pipeline.face_authenticator import FaceAuthenticator
@@ -189,6 +189,12 @@ class SmartCarNode:
                 self.camera = USBCamera(
                     specs=specs,
                     device_id=cam_config['device_id']
+                )
+            elif cam_config['type'] == 'mp4':
+                self.camera = MP4Camera(
+                    specs=specs,
+                    video_path=cam_config.get('video_path', 'data/test_video.mp4'),
+                    loop=cam_config.get('loop', True)
                 )
             else:
                 logger.error(f"Unsupported camera type: {cam_config['type']}")
@@ -455,9 +461,15 @@ class SmartCarNode:
                     fps_start = time.time()
 
                 # Display results
+                det_config = self.recognition_config.get('detection', {})
+                rec_config = self.recognition_config.get('recognition', {})
+
                 extra_info = {
                     "Faces": len(results),
-                    "DB": self.recognizer.get_database_size()
+                    "DB": self.recognizer.get_database_size(),
+                    "Detector": det_config.get('detector_type', 'unknown'),
+                    "Threshold": f"{rec_config.get('similarity_threshold', 0.6):.2f}",
+                    "MinSize": det_config.get('min_face_size', 80)
                 }
 
                 # Add state to display
